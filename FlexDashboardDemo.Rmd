@@ -1,0 +1,139 @@
+---
+title: "Wisdom of Groups"
+output: 
+  flexdashboard::flex_dashboard
+---
+
+```{r setup, include=FALSE}
+
+#load library
+library(flexdashboard)
+library(tidyverse)
+library(readxl)
+library(forcats)
+library(pracma)
+library(gganimate)
+library(plotly)
+
+#load files
+df <- read_xls("DataScienceDemo_12Aug20.xls")
+
+#Scoring responses
+Q1_ans <- 46 #g of sugar in Mtn Dew (12 oz)
+Q2_ans <- 8 # glasses of water per day
+Q3_ans <- 54 # countries on African continent
+Q4_ans <- 4258 # length of Nile River in miles
+Q5_ans <- 460 # HP of 2020 Ford Mustang GT
+Q6_ans <-  54 # miles per gallon for Toyota Prius LE
+Q7_ans <- 32 # Team in NFL
+Q8_ans <- 46 # Books written by Dr. Seuss
+Q9_ans <- 118 # elements in periodic table
+
+dfb <- df %>% add_row(Name="Answer", Wisdom1=Q1_ans, Wisdom2=Q2_ans, Wisdom3=Q3_ans, Wisdom4=Q4_ans, Wisdom5=Q5_ans, Wisdom6=Q6_ans, Wisdom7=Q7_ans, Wisdom8=Q8_ans, Wisdom9=Q9_ans ) %>% select(-YearsExperience)
+
+answer <- c(Q1=Q1_ans, Q2=Q2_ans, Q3=Q3_ans, Q4=Q4_ans, Q5=Q5_ans, Q6=Q6_ans, Q7=Q7_ans, Q8=Q8_ans, Q9=Q9_ans )
+
+#Add Group medians
+df2 <- dfb %>% select(Name, Wisdom1:Wisdom3, Wisdom4:Wisdom6, Wisdom7:Wisdom9) %>% gather (Wisdom1:Wisdom9, key=Question, value=Score) %>% 
+     group_by (Question) %>% 
+     mutate (GroupWisdom = median(Score) ) %>% 
+     select(Question, GroupWisdom) %>% distinct() %>% 
+     spread (key=Question, value = GroupWisdom) %>% mutate(Name ="GroupWisdom") %>%
+     bind_rows(dfb) %>% select(Name, Wisdom1:Wisdom9)
+
+#Compute Errors by Individual
+df2b <- df2 %>% gather (Wisdom1:Wisdom9, key=Question, value=Score) %>% mutate("Answer"= if_else(Question=="Wisdom1", Q1_ans, 
+            if_else(Question=="Wisdom2", Q2_ans, 
+                    if_else(Question=="Wisdom3", Q3_ans, 
+                            if_else(Question=="Wisdom4", Q4_ans,
+                                    if_else(Question=="Wisdom5", Q5_ans,
+                                            if_else(Question=="Wisdom6", Q6_ans,
+                                                    if_else(Question=="Wisdom7", Q7_ans,
+                                                            if_else(Question=="Wisdom8", Q8_ans, Q9_ans)
+                                                                    )))))))) %>% 
+     mutate(Error=((Score-Answer)/Answer)*100) 
+
+#Display Errors
+df2b$Question  <- gsub("Wisdom1", "MtnDewSugar", df2b$Question)
+df2b$Question  <- gsub("Wisdom2", "WaterperDay", df2b$Question)
+df2b$Question  <- gsub("Wisdom3", "AfricaCountries", df2b$Question)
+df2b$Question  <- gsub("Wisdom4", "NileLength", df2b$Question)
+df2b$Question  <- gsub("Wisdom5", "MustangHP", df2b$Question)
+df2b$Question  <- gsub("Wisdom6", "PriusMPG", df2b$Question)
+df2b$Question  <- gsub("Wisdom7", "NFLTeams", df2b$Question)
+df2b$Question  <- gsub("Wisdom8", "DrSeussBooks", df2b$Question)
+df2b$Question  <- gsub("Wisdom9", "PerTableElements", df2b$Question)
+
+df3 <- df2 %>% mutate( Q1_Score= 100*(abs(Wisdom1 - Q1_ans))/Q1_ans  ) %>% 
+     mutate( Q2_Score= 100*(abs(Wisdom2 - Q2_ans))/Q2_ans  ) %>% 
+     mutate( Q3_Score= 100*(abs(Wisdom3- Q3_ans))/Q3_ans  ) %>% 
+     mutate( Q4_Score= 100*(abs(Wisdom4 - Q4_ans))/Q4_ans  ) %>% 
+     mutate( Q5_Score= 100*(abs(Wisdom5 - Q5_ans))/Q5_ans  ) %>% 
+     mutate( Q6_Score= 100*(abs(Wisdom6 - Q6_ans))/Q6_ans  ) %>%      
+     mutate( Q7_Score= 100*(abs(Wisdom7 - Q7_ans))/Q7_ans  ) %>%      
+     mutate( Q8_Score= 100*(abs(Wisdom8 - Q8_ans))/Q8_ans  ) %>%      
+     mutate( Q9_Score= 100*(abs(Wisdom9 - Q9_ans))/Q9_ans  )   
+
+df4 <- df3 %>% select(Name:Q9_Score) %>% 
+     gather(Q1_Score:Q9_Score, key=Question, value=Score) %>% 
+     group_by (Name)  %>%
+     arrange (Name) %>% mutate(Item=rank(Score, ties.method = "first")) %>% select (-Question) %>% 
+     arrange(Name, Score) %>% 
+     mutate(Average= movavg(Score, 8, type="s") ) %>% 
+     select (-Score)
+df4$Item <- as.integer(df4$Item)
+
+
+
+```
+
+Row {.tabset .tabset-fade}
+-----------------------------------------------------------------------
+
+### Estimation Errors by Question (boxplot)
+
+```{r}
+df2b %>% ggplot(aes(x=Question, y=Error))  + 
+  geom_boxplot(aes(x=reorder(Question, Error, FUN=median)),color="darkgreen") + 
+  geom_point(aes(group=Name), color="gray") +
+  #ggtitle("Response Error") +
+  ylim(-100, 100) + ylab("Percent Error") + coord_flip() + 
+  geom_hline(yintercept = 0, linetype="dashed", color="red") +
+  xlab("")
+```
+
+### Estimation Error by Individual (animation)
+
+```{r}
+p <- df4 %>% filter (Name!="Answer") %>% mutate(Group=if_else(Name=="GroupWisdom", "GroupWisdom", "Individuals") )%>%  ggplot(aes(x=Item, y=Average)) +
+  geom_point(aes(color = Group, size = Group)) +
+  xlab ("# of Items") +
+  ylab ("Average Estimation Error") +
+ # labs (title = "Individual Running Average of Response Accuracy") +
+  scale_color_manual(values=c("green", "darkgray")) +
+  scale_size_manual(values=c(6, 2))+
+  theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
+  theme(axis.text.x=element_blank(), axis.ticks.y=element_blank())
+
+#anim <- p + transition_states(Item, transition_length = .5, state_length = 1)
+
+anim <- p + transition_time(Item) +  labs(title = "Item: {frame_time}") + shadow_wake(wake_length = 0.1, alpha = FALSE)
+animate(anim, height=500, width=600)
+```
+
+### The Best Estimators ? (plotly chart)
+
+```{r}
+q <- df4 %>% filter (Name!="Answer") %>% filter(Name %in% c("GroupWisdom", "MarkC", "DamianW", "JonathanJ", "DanH", "LarsR","JasonL" )) %>% 
+  ggplot(aes(x=Item, y=Average)) +
+  geom_line(aes(group = Name), color="gray", linetype="dashed") +
+  geom_point(aes(color = Name)) +
+  xlab ("# of Items") +
+  ylab ("Average Error") +
+  labs (title = "Average Estimation Error") +
+  theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
+     theme(axis.text.x=element_blank(), axis.ticks.y=element_blank())
+
+ggplotly(q)
+```
+
